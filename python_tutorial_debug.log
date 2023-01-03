@@ -1,0 +1,23 @@
+2022-12-31 11:43:46,242 [Thread-1    ] [INFO ]  Child thread: 0
+2022-12-31 11:43:46,243 [MainThread  ] [INFO ]  Main thread: 0
+2022-12-31 11:43:47,243 [MainThread  ] [INFO ]  Main thread: 1
+2022-12-31 11:43:47,243 [Thread-1    ] [INFO ]  Child thread: 1
+2022-12-31 11:43:48,244 [Thread-1    ] [INFO ]  Child thread: 2
+2022-12-31 11:43:48,244 [MainThread  ] [INFO ]  Main thread: 2
+2022-12-31 11:43:49,244 [Thread-1    ] [INFO ]  Child thread: 3
+2022-12-31 11:43:50,245 [Thread-1    ] [INFO ]  Child thread: 4
+2022-12-31 11:43:51,245 [MainThread  ] [INFO ]  Done.
+2022-12-31 11:47:35,893 [Thread-1    ] [INFO ]  Child thread: 0
+2022-12-31 11:47:35,893 [Thread-2    ] [INFO ]  Child2 thread: 0
+2022-12-31 11:47:35,893 [MainThread  ] [INFO ]  Main thread: 0
+2022-12-31 11:47:36,894 [MainThread  ] [INFO ]  Main thread: 1
+2022-12-31 11:47:36,894 [Thread-2    ] [INFO ]  Child2 thread: 1
+2022-12-31 11:47:36,894 [Thread-1    ] [INFO ]  Child thread: 1
+2022-12-31 11:47:37,894 [Thread-1    ] [INFO ]  Child thread: 2
+2022-12-31 11:47:37,895 [Thread-2    ] [INFO ]  Child2 thread: 2
+2022-12-31 11:47:37,895 [MainThread  ] [INFO ]  Main thread: 2
+2022-12-31 11:47:38,895 [Thread-2    ] [INFO ]  Child2 thread: 3
+2022-12-31 11:47:38,895 [Thread-1    ] [INFO ]  Child thread: 3
+2022-12-31 11:47:39,895 [Thread-1    ] [INFO ]  Child thread: 4
+2022-12-31 11:47:39,896 [Thread-2    ] [INFO ]  Child2 thread: 4
+2022-12-31 11:47:40,897 [MainThread  ] [INFO ]  Done.
