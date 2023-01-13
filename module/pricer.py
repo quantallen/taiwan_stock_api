@@ -6,7 +6,6 @@ import logging
 import sys
 import random
 import string
-from simulator.Order import Order
 import telegram
 import hashlib
 
@@ -59,28 +58,9 @@ def side_to_price(side, x):
         return neg
 
 
-class TwoWayDict(dict):
-    def __setitem__(self, key, value):
-        # Remove any previous connections with these values
-        if key in self:
-            del self[key]
-        if value in self:
-            del self[value]
-        dict.__setitem__(self, key, value)
-        dict.__setitem__(self, value, key)
-
-    def __delitem__(self, key):
-        dict.__delitem__(self, self[key])
-        dict.__delitem__(self, key)
-
-    def __len__(self):
-        """Returns the number of connections"""
-        return dict.__len__(self) // 2
-
 
 class Pricer:
     active_orders = {}
-    open_close_mapping = TwoWayDict()
 
     def __init__(self, api, ref_symbol, target_symbol, logger,configs):
         self.api = api
@@ -150,54 +130,17 @@ class Pricer:
     async def create_open_orders(self, spread_prices):
         print("===== create open orders =====")
         async with self.lock:
-            order_tasks = []
-
-            order_reference = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-            order_target= ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-            message_order = order_reference.encode()
-            m =hashlib.md5()
-            m.update(message_order)
-            order_reference = m.hexdigest()
-            
-            message_order = order_target.encode()
-            m =hashlib.md5()
-            m.update(message_order)
-            order_target = m.hexdigest()
-            
-            self.order_id[self.ref_symbol] = order_reference
-            self.order_id[self.target_symbol] = order_target
-            
-            price = spread_prices.get_price(self.ref_symbol)
-            price = round_price_ref(price,self.config.PRECISION_PRICE_REF)
-            size = spread_prices.get_size(self.ref_symbol)
-            size = trunc_amount_ref(size,self.config.PRECISION_AMOUNT_REF)
-            side = spread_prices.get_side(self.ref_symbol)
-            #first_trade_alert(self.ref_symbol, price, side, size)
-            print("price and size :", price, size)
-            if side == 'BUY':
-                order_tasks.append(self.api.futures_create_order(
-                    symbol=self.ref_symbol, side="BUY", price=price, quantity=size, newClientOrderId=order_reference, type='LIMIT', timeInForce="FOK", newOrderRespType = "RESULT", recvWindow=5000))
-                #order_tasks.append(self.api.futures_create_order(
-                #    symbol=self.ref_symbol, side="BUY", quantity=size, newClientOrderId=order_key_buy, type= "MARKET", recvWindow=5000))
-            elif side == 'SELL':
-                order_tasks.append(self.api.futures_create_order(
-                    symbol=self.ref_symbol, side="SELL", price=price, quantity=size, newClientOrderId=order_reference, type='LIMIT', timeInForce="FOK", newOrderRespType = "RESULT", recvWindow=5000))
-                
-            price = spread_prices.get_price(self.target_symbol)
-            price = round_price_target(price,self.config.PRECISION_PRICE_TARGET)
-            size = spread_prices.get_size(self.target_symbol)
-            size = trunc_amount_target(size,self.config.PRECISION_AMOUNT_TARGET)
-            side = spread_prices.get_side(self.target_symbol)
-            print("price and size :", price, size)
-            if side == 'BUY':
-                order_tasks.append(self.api.futures_create_order(
-                    symbol=self.target_symbol, side="BUY", price=price, quantity=size, newClientOrderId=order_target, type='LIMIT', timeInForce="FOK", newOrderRespType = "RESULT", recvWindow=5000))
-            elif side == 'SELL':
-                order_tasks.append(self.api.futures_create_order(
-                    symbol=self.target_symbol, side="SELL", price=price, quantity=size, newClientOrderId=order_target, type='LIMIT', timeInForce="FOK", newOrderRespType = "RESULT", recvWindow=5000))
-
-
-            result = await asyncio.gather(*order_tasks)
+            contract = self.api.Contracts.Stocks["2890"]
+            order = self.api.Order(
+                price= spread_prices.get_price(self.ref_symbol),
+                quantity= spread_prices.get_size(self.ref_symbol),
+                action= spread_prices.get_side(self.ref_symbol),
+                price_type="LMT",
+                order_type="ROD",
+                order_lot="Common",
+                account=self.api.stock_account,
+            )
+            trade = self.api.place_order(contract, order)
             
                
             

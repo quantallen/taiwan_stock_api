@@ -7,15 +7,10 @@ sys.path.append('./module')
 from tw_pt import TF_pair_trading
 import shioaji as sj
 from config import Pair_Trading_Config
-from credentials import person_id, account, password, c_path
 async def main():
     api = sj.Shioaji()
-    accounts = api.login(account, password)
-    api.activate_ca(
-        ca_path=c_path,
-        ca_passwd= person_id,
-        person_id= person_id,
-    )
+    from credentials import api_key, api_secret
+    api.login(api_key, api_secret)
     configs = Pair_Trading_Config()
     tw_pair_trading = TF_pair_trading(api, api, configs)
     await tw_pair_trading.execute()

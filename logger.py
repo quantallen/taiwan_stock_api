@@ -19,7 +19,8 @@ def get_stream_handler():
     return stream_handler
 
 
-def get_file_handler():
+def get_file_handler(name):
+    LOG_FILE = name + '.log'
     file_handler = logging.FileHandler(filename=LOG_FILE)
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(FORMATTER)
@@ -31,7 +32,7 @@ def get_logger(logger_name):
     logger.setLevel(logging.INFO)
 
     logger.addHandler(get_stream_handler())
-    logger.addHandler(get_file_handler())
+    logger.addHandler(get_file_handler(logger_name))
 
     return logger
 def job():

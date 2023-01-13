@@ -217,8 +217,8 @@ class Predictor:
         self.spread_quotes.set_side(
             self.target_symbol, self.side_determination(self.target_size)
         )
-        self.logger.info(f'reference_price = {ref_trade_price * (1 + self.slippage_number(slippage,self.ref_size))} . size = {abs(self.ref_size)} , side = {self.side_determination(self.ref_size)}')
-        self.logger.info(f'target_price = {target_trade_price *(1 + self.slippage_number(slippage,self.target_size))} . size = {abs(self.target_size)} , side = {self.side_determination(self.target_size)}')
+        self.logger.info(f'reference_price = {ref_trade_price * (1)} . size = {abs(self.ref_size)} , side = {self.side_determination(self.table["w1"])}')
+        self.logger.info(f'target_price = {target_trade_price *(1)} . size = {abs(self.target_size)} , side = {self.side_determination(self.table["w2"])}')
         #self.logger.fill_simulator(f'reference_price = {ref_trade_price * (1 + self.slippage_number(slippage,self.ref_size))} . size = {abs(self.ref_size)} , side = {self.side_determination(self.ref_size)}')
         #self.logger.fill_simulator(f'target_price = {target_trade_price *(1 + self.slippage_number(slippage,self.target_size))} . size = {abs(self.target_size)} , side = {self.side_determination(self.target_size)}') 
         # self.logger.fills('BTSE', "SIMULATOR", self.ref_symbol,
@@ -245,8 +245,8 @@ class Predictor:
             self.target_symbol, CLOSE_POSITION[self.side_determination(
                 self.target_size)]
         )
-        self.logger.info(f'reference_price = {ref_trade_price * (1 - self.slippage_number(slippage,self.ref_size))} . size = {abs(self.ref_size)} , side = {CLOSE_POSITION[self.side_determination(self.ref_size)]}')
-        self.logger.info(f'target_price = {target_trade_price *(1 - self.slippage_number(slippage,self.target_size))} . size = {abs(self.target_size)} , side = {CLOSE_POSITION[self.side_determination(self.target_size)]}')
+        self.logger.info(f'reference_price = {ref_trade_price * (1)} . size = {abs(self.ref_size)} , side = {CLOSE_POSITION[self.side_determination(self.ref_size)]}')
+        self.logger.info(f'target_price = {target_trade_price *(1)} . size = {abs(self.target_size)} , side = {CLOSE_POSITION[self.side_determination(self.target_size)]}')
         #self.logger.fill_simulator(f'reference_price = {ref_trade_price * (1 + self.slippage_number(slippage,self.ref_size))} . size = {abs(self.ref_size)} , side = {CLOSE_POSITION[self.side_determination(self.ref_size)]}')
         #self.logger.fill_simulator(f'target_price = {target_trade_price *(1 + self.slippage_number(slippage,self.target_size))} . size = {abs(self.target_size)} , side = {CLOSE_POSITION[self.side_determination(self.target_size)]}') 
         # self.logger.fills('BTSE', "SIMULATOR", self.ref_symbol,
@@ -296,6 +296,7 @@ class Predictor:
             if self.position == 0 and self.cointegration_check is False and self.timestamp_check is True:
                 print("in test cointegration")
                 mu, stdev, model, w1, w2 = self.cointegration_test()
+                self.logger.info("Cointegration parameters : mu : {}, stdev : {}, model : {} , w1 : {}, w2 : {} ".format(mu, stdev, model, w1, w2) )
                 if model[0] > 0 and model[0] < 4 and w1 * w2 < 0 :
                     self.cointegration_check = True
                     self.table = {

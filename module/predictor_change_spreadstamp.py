@@ -9,8 +9,9 @@ import PTwithTimeTrend_AllStock as ptm
 import pandas as pd
 from scipy.ndimage.interpolation import shift
 import matplotlib.pyplot as plt
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, date
 import os
+from integer import num_weight
 
 dtype = {
     'S1': str,
@@ -24,8 +25,8 @@ dtype = {
     'w2': float
 }
 CLOSE_POSITION = {
-    "BUY": "SELL",
-    "SELL": "BUY"
+    "Buy": "Sell",
+    "Sell": "Buy"
 }
 
 
@@ -42,12 +43,10 @@ class SpreadQuotes:
         self.target = target_symbol
         
     def set_size(self, symbol, size):
-        #assert symbol in ["BTC-USD", "ETH-USD"]
         assert symbol in [self.ref, self.target]
         self.spread_size[symbol] = size
 
     def get_size(self, symbol):
-        #assert symbol in ["BTC-USD", "ETH-USD"]
         assert symbol in [self.ref, self.target]
         return self.spread_size[symbol]
 
@@ -55,7 +54,6 @@ class SpreadQuotes:
         self.spread_price[symbol] = price
 
     def get_price(self, symbol):
-        #assert symbol in ["BTC-USD", "ETH-USD"]
         assert symbol in [self.ref, self.target]
         return self.spread_price[symbol]
 
@@ -63,25 +61,22 @@ class SpreadQuotes:
         self.spread_symbol[symbol] = side
 
     def get_side(self, symbol):
-        #assert symbol in ["BTC-USD", "ETH-USD"]
         assert symbol in [self.ref, self.target]
         return self.spread_symbol[symbol]
 
 
 class Spreads:
-
-    index = 0
-    is_warmed_up = False
-
     def __init__(self, window_size):
         self.xs = np.zeros(window_size)
         self.window_size = window_size
+        self.index = 0
+        self.is_warmed_up = False
 
     def update(self, x):
 
         if self.index == self.window_size:
             self.xs = shift(self.xs, -1, cval=0)
-            self.index = 119
+            self.index = self.window_size - 1
         self.xs[self.index % self.window_size] = x
         # print(self.xs)
         if self.index == self.window_size - 1:
@@ -96,7 +91,7 @@ class Predictor:
     sec_timestamp_1 = 0
     sec_timestamp_2 = 0
 
-    def __init__(self, window_size, ref_symbol, target_symbol, slippage,log):
+    def __init__(self, window_size, ref_symbol, target_symbol, slippage,log,api):
         self.window_size = window_size
         self.ref_symbol = ref_symbol
         self.target_symbol = target_symbol
@@ -114,15 +109,17 @@ class Predictor:
             "mu": 0,
             "stdev": 0,
             "model": 0,
-            "capital": 3000
+            "capital": 30000000,
+            "max_hold" : 5
         }
         self.ref_size = 0
         self.target_size = 0
         self.cointegration_check = False
         self.timestamp_check = False
-        self.count = 0
         self.cointegration_upline = []
         self.cointegration_downline = []
+        self.api = api
+        self.check = False
     def get_asks(self, orderbook):
         ref_ask = None
         target_ask = None
@@ -169,7 +166,7 @@ class Predictor:
             target_mid_price = (target_ask + target_bid) / \
                 2  # target mid price
             #print(datetime.now())
-            print(f"ref :{ref_mid_price} , target : {target_mid_price}")
+            self.logger.info(f"ref :{ref_mid_price} , target : {target_mid_price}")
             if ref_ask and target_ask and ref_bid and target_bid:
                 #ask_spread = target_ask - ref_ask
                 #bid_spread = target_bid - ref_bid
@@ -180,11 +177,24 @@ class Predictor:
                 #print(f"target_spread : {self.target_spreads}")
 
     def cointegration_test(self,):
-        #print("in cointegration")
-        tmp = {self.ref_symbol: self.ref_spreads.xs,
-               self.target_symbol: self.target_spreads.xs}
+        kbars_ref = self.api.kbars(self.api.Contracts.Stocks[self.ref_symbol], start = str(date.today()), end = str(date.today()))
+        df = pd.DataFrame({**kbars_ref})
+        df.ts = pd.to_datetime(df.ts)
+        ref_df = df[:self.window_size]['Close'].to_numpy()
+        kbars_target = self.api.kbars(self.api.Contracts.Stocks[self.target_symbol], start = str(date.today()), end = str(date.today()))
+        df = pd.DataFrame({**kbars_target})
+        df.ts = pd.to_datetime(df.ts)
+        target_df = df[:self.window_size]['Close'].to_numpy()
+        tmp = {self.ref_symbol: ref_df,
+               self.target_symbol: target_df}
+        # -------------------------------------------------------------
+        # tmp = {self.ref_symbol: self.ref_spreads.xs,
+        #        self.target_symbol: self.target_spreads.xs}
+        # -------------------------------------------------------------
+        # price_series = [[r, t] for r, t in zip(
+        #     self.ref_spreads.xs, self.target_spreads.xs)]
         price_series = [[r, t] for r, t in zip(
-            self.ref_spreads.xs, self.target_spreads.xs)]
+            ref_df, target_df)]
         price_series = np.array(price_series)
         #print("prices series",price_series)
         price_data = pd.DataFrame(tmp)
@@ -218,19 +228,15 @@ class Predictor:
 
     def side_determination(self, size):
         if self.position == -1:
-            return "SELL" if size > 0 else "BUY"
+            return "Sell" if size > 0 else "Buy"
         elif self.position == 1:
-            return "SELL" if size < 0 else "BUY"
+            return "Sell" if size < 0 else "Buy"
 
     def open_Quotes_setting(self, ref_trade_price, target_trade_price):
         slippage = self.slippage
         
-        self.ref_size, self.target_size = self.table["w1"] * self.table["capital"] / \
-            ref_trade_price, self.table["w2"] * \
-            self.table["capital"] / target_trade_price
-        
-        #self.ref_size = -0.01
-        #self.target_size = 0.5
+        self.ref_size ,self.target_size= num_weight(self.table["w1"], self.table["w2"], ref_trade_price,
+                                    target_trade_price, self.table["max_hold"], self.table["capital"])
         self.spread_quotes.set_price(
             self.ref_symbol, ref_trade_price * (1 + self.slippage_number(slippage, self.ref_size)))
         self.spread_quotes.set_price(
@@ -245,8 +251,8 @@ class Predictor:
         self.spread_quotes.set_side(
             self.target_symbol, self.side_determination(self.target_size)
         )
-        print(f'reference_price = {ref_trade_price * (1 + self.slippage_number(slippage,self.ref_size))} . size = {abs(self.ref_size)} , side = {self.side_determination(self.ref_size)}')
-        print(f'target_price = {target_trade_price *(1 + self.slippage_number(slippage,self.target_size))} . size = {abs(self.target_size)} , side = {self.side_determination(self.target_size)}')
+        self.logger.info(f'reference_price = {ref_trade_price * (1)} . size = {abs(self.ref_size)} , side = {self.side_determination(self.ref_size)}')
+        self.logger.info(f'target_price = {target_trade_price *(1)} . size = {abs(self.target_size)} , side = {self.side_determination(self.target_size)}')
 
     def close_Quotes_setting(self, ref_trade_price, target_trade_price):
         slippage = self.slippage
@@ -268,10 +274,9 @@ class Predictor:
             self.target_symbol, CLOSE_POSITION[self.side_determination(
                 self.target_size)]
         )
-        print(f'reference_price = {ref_trade_price * (1 - self.slippage_number(slippage,self.ref_size))} . size = {abs(self.ref_size)} , side = {CLOSE_POSITION[self.side_determination(self.ref_size)]}')
-        print(f'target_price = {target_trade_price *(1 - self.slippage_number(slippage,self.target_size))} . size = {abs(self.target_size)} , side = {CLOSE_POSITION[self.side_determination(self.target_size)]}')
+        self.logger.info(f'reference_price = {ref_trade_price * (1)} . size = {abs(self.ref_size)} , side = {CLOSE_POSITION[self.side_determination(self.ref_size)]}')
+        self.logger.info(f'target_price = {target_trade_price *(1)} . size = {abs(self.target_size)} , side = {CLOSE_POSITION[self.side_determination(self.target_size)]}')
         self.position = 888
-        #self.position = 0
 
     def draw_pictrue(self,ref,bid,open_threshold,stop_loss_threshold,stamp,POS):
         path_to_image = "./trading_position_pic/"
@@ -306,49 +311,22 @@ class Predictor:
         elif POS == 'close':
             plt.savefig(path + str(self.ref_symbol) + '_' + str(self.target_symbol) + '_' +POS+'spread_'+ time+'.png')
 
-    def get_target_spread_price(self, orderbook, orderbook_5min, open_threshold, stop_loss_threshold):
+    def get_target_spread_price(self, orderbook, orderbook_1min, open_threshold, stop_loss_threshold):
         if self.ref_spreads.is_warmed_up and self.target_spreads.is_warmed_up and orderbook[self.ref_symbol]['timestamp'] != self.sec_timestamp_1 and orderbook[self.target_symbol]['timestamp'] != self.sec_timestamp_2:
-            ref_ask, target_ask = self.get_asks(orderbook_5min)
-            ref_bid, target_bid = self.get_bids(orderbook_5min)
+            ref_ask, target_ask = self.get_asks(orderbook)
+            ref_bid, target_bid = self.get_bids(orderbook)
             ref_mid_price = (ref_ask + ref_bid) / 2  # ref mid price
             target_mid_price = (target_ask + target_bid) / 2
             self.sec_timestamp_1 = orderbook[self.ref_symbol]['timestamp']
             self.sec_timestamp_2 = orderbook[self.target_symbol]['timestamp']
-            ref_ask, target_ask = self.get_level_asks(orderbook)
-            ref_bid, target_bid = self.get_level_bids(orderbook)
-            '''
-            if self.position == 0 :
-                print("FUUCK IN LA")
-                self.position = -1
-                self.ref_size = -0.123244 
-                self.target_size = 0.0521321
-                if self.ref_size < 0 and self.target_size > 0:
-                            print("Allen is handsome")
-                            self.open_Quotes_setting(ref_ask,target_bid)
-                            print(ref_ask,target_bid)
-                            return self.spread_quotes
-            elif self.position == -1 and self.count == 10 :
-                
-                self.count = 0 
-                if self.ref_size < 0 and self.target_size > 0:
-                            self.close_Quotes_setting(ref_bid,target_ask)
-                            print(ref_bid,target_ask)
-                            return self.spread_quotes
-            elif self.position == -1 :
-                self.count += 1
-            '''
-        
-            if self.five_min_timestamp_1 != orderbook_5min[self.ref_symbol]['timestamp'] and self.five_min_timestamp_2 != orderbook_5min[self.target_symbol]['timestamp']:
-                self.five_min_timestamp_1 = orderbook_5min[self.ref_symbol]['timestamp']
-                self.five_min_timestamp_2 = orderbook_5min[self.target_symbol]['timestamp']
-                self.cointegration_check = False
-                self.timestamp_check = True
-            else:
-                self.timestamp_check = False
+            # ref_ask, target_ask = self.get_level_asks(orderbook)
+            # ref_bid, target_bid = self.get_level_bids(orderbook)
 
-            if self.position == 0 and self.cointegration_check is False and self.timestamp_check is True:
-                print("in test cointegration")
+            if self.position == 0 and self.cointegration_check is False and self.check is False:
+                self.logger.info("in test cointegration")
                 mu, stdev, model, w1, w2 = self.cointegration_test()
+                self.logger.info("Cointegration parameters : mu : {}, stdev : {}, model : {} , w1 : {}, w2 : {} ".format(mu, stdev, model, w1, w2) )
+
                 if model[0] > 0 and model[0] < 4 and w1 * w2 < 0 :
                     self.cointegration_check = True
                     self.table = {
@@ -357,8 +335,10 @@ class Predictor:
                         "mu": float(mu),
                         "stdev": float(stdev),
                         "model": model[0],
-                        "capital": 3000
+                        "max_hold" : 5,
+                        "capital": 30000000
                     }
+                self.check = True
             if self.position == 0 and self.cointegration_check == True:
                 
                 if self.table["w1"] < 0 and self.table["w2"] > 0:
@@ -396,16 +376,16 @@ class Predictor:
                 if spread_stamp_up > open_threshold * self.table['stdev'] + self.table['mu'] and spread_stamp_up < self.table["mu"] + self.table["stdev"] * stop_loss_threshold:
 
                     self.position = -1
-                    print(
-                        f"上開倉 : Ref Size : {self.ref_size} Ref Price :{ref_mid_price} Target Size : {self.target_size} Target Price :{target_mid_price}")
+                    self.logger.info(
+                        f"上開倉")
                     if self.table['w1'] < 0 and self.table['w2'] > 0:
                         self.open_Quotes_setting(ref_ask, target_bid)
-                        self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp_up,'open')
+                        #self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp_up,'open')
                         print(ref_ask, target_bid)
                         return self.spread_quotes
                     elif self.table['w1'] > 0 and self.table['w2'] < 0:
                         self.open_Quotes_setting(ref_bid, target_ask)
-                        self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp_up,'open')
+                        #self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp_up,'open')
 
                         print(ref_bid, target_ask)
                         return self.spread_quotes
@@ -423,18 +403,17 @@ class Predictor:
                 elif spread_stamp_down < self.table['mu'] - open_threshold * self.table['stdev'] and spread_stamp_down > self.table["mu"] - self.table["stdev"] * stop_loss_threshold:
                     self.position = 1
                     #self.draw_pictrue(open_threshold,stop_loss_threshold,spread_stamp_down,'open')
-                    print(
-                        f"下開倉 : Ref Size : {self.ref_size} Ref Price :{ref_mid_price} Target Size : {self.target_size} Target Price :{target_mid_price}")
-                    print(f"Ref bid:{ref_bid} ; Target_ask : {target_ask}")
+                    self.logger.info(
+                        f"下開倉")
                     if self.table["w1"] < 0 and self.table['w2'] > 0:
                         self.open_Quotes_setting(ref_bid, target_ask)
-                        self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp_down,'open')
+                        #self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp_down,'open')
 
                         print(ref_bid, target_ask)
                         return self.spread_quotes
                     elif self.table["w1"] > 0 and self.table['w2'] < 0:
                         self.open_Quotes_setting(ref_ask, target_bid)
-                        self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp_down,'open')
+                        #self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp_down,'open')
                         print(ref_ask, target_bid)
                         return self.spread_quotes
                     elif self.table["w1"] < 0 and self.table['w2'] < 0:
@@ -471,17 +450,16 @@ class Predictor:
                             self.table["w2"] * np.log(target_bid)
                     if spread_stamp < self.table['mu']:
                         #self.draw_pictrue(open_threshold,stop_loss_threshold,spread_stamp,'close')
-                        print(
-                            f"上開倉正常平倉 : Ref Size : {self.ref_size} Ref Price :{ref_mid_price} Target Size : {self.target_size} Target Price :{target_mid_price}")
+                        self.logger.info("上開倉正常平倉")
                         self.cointegration_check = False
                         if self.ref_size < 0 and self.target_size > 0:
                             self.close_Quotes_setting(ref_bid, target_ask)
-                            self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp,'close')
+                            #self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp,'close')
                             print(ref_bid, target_ask)
                             return self.spread_quotes
                         elif self.ref_size > 0 and self.target_size < 0:
                             self.close_Quotes_setting(ref_ask, target_bid)
-                            self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp,'close')
+                            #self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp,'close')
                             print(ref_ask, target_bid)
                             return self.spread_quotes
                         elif self.ref_size > 0 and self.target_size > 0:
@@ -497,16 +475,15 @@ class Predictor:
                     elif spread_stamp > self.table["mu"] + self.table["stdev"] * stop_loss_threshold:
                         self.cointegration_check = False
                         #self.draw_pictrue(open_threshold,stop_loss_threshold,spread_stamp,'close')
-                        print(
-                            f"上開倉停損平倉 : Ref Size : {self.ref_size} Ref Price :{ref_mid_price} Target Size : {self.target_size} Target Price :{target_mid_price}")
+                        self.logger.info("上開倉停損平倉")
                         if self.ref_size < 0 and self.target_size > 0:
                             self.close_Quotes_setting(ref_bid, target_ask)
-                            self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp,'close')
+                            #self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp,'close')
                             print(ref_bid, target_ask)
                             return self.spread_quotes
                         elif self.ref_size > 0 and self.target_size < 0:
                             self.close_Quotes_setting(ref_ask, target_bid)
-                            self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp,'close')
+                            #self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp,'close')
                             print(ref_ask, target_bid)
                             return self.spread_quotes
                         elif self.ref_size > 0 and self.target_size > 0:
@@ -519,6 +496,31 @@ class Predictor:
 
                             print(ref_bid, target_bid)
                             return self.spread_quotes
+                    elif time.strftime("%H:%M:%S") == '13:24:50':
+                        self.cointegration_check = False
+                        #self.draw_pictrue(open_threshold,stop_loss_threshold,spread_stamp,'close')
+                        self.logger.info(
+                            f"上開倉強制平倉")
+                        if self.ref_size < 0 and self.target_size > 0:
+                            self.close_Quotes_setting(ref_bid, target_ask)
+                            #self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp,'close')
+                            print(ref_bid, target_ask)
+                            return self.spread_quotes
+                        elif self.ref_size > 0 and self.target_size < 0:
+                            self.close_Quotes_setting(ref_ask, target_bid)
+                            #self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp,'close')
+                            print(ref_ask, target_bid)
+                            return self.spread_quotes
+                        elif self.ref_size > 0 and self.target_size > 0:
+                            self.close_Quotes_setting(ref_ask, target_ask)
+
+                            print(ref_ask, target_ask)
+                            return self.spread_quotes
+                        elif self.ref_size < 0 and self.target_size < 0:
+                            self.close_Quotes_setting(ref_bid, target_bid)
+
+                            print(ref_bid, target_bid)
+                            return self.spread_quote
                 elif self.position == 1:
                     if self.ref_size < 0 and self.target_size > 0:
                         spread_stamp = self.table["w1"] * \
@@ -542,16 +544,16 @@ class Predictor:
                     if spread_stamp > self.table['mu']:
                         self.cointegration_check = False
                         #self.draw_pictrue(open_threshold,stop_loss_threshold,spread_stamp,'close')
-                        print(
+                        self.logger.info(
                             f"下開倉正常平倉 : Ref Size : {self.ref_size} Ref Price :{ref_mid_price} Target Size : {self.target_size} Target Price :{target_mid_price}")
                         if self.ref_size < 0 and self.target_size > 0:
                             self.close_Quotes_setting(ref_ask, target_bid)
-                            self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp,'close')
+                            #self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp,'close')
                             print(ref_ask, target_bid)
                             return self.spread_quotes
                         elif self.ref_size > 0 and self.target_size < 0:
                             self.close_Quotes_setting(ref_bid, target_ask)
-                            self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp,'close')
+                            #self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp,'close')
                             print(ref_bid, target_ask)
                             return self.spread_quotes
                         elif self.ref_size > 0 and self.target_size > 0:
@@ -565,16 +567,16 @@ class Predictor:
                     elif spread_stamp < self.table["mu"] - self.table["stdev"] * stop_loss_threshold:
                         self.cointegration_check = False
                         #self.draw_pictrue(open_threshold,stop_loss_threshold,spread_stamp,'close')
-                        print(
-                            f"下開倉停損平倉 : Ref Size : {self.ref_size} Ref Price :{ref_mid_price} Target Size : {self.target_size} Target Price :{target_mid_price}")
+                        self.logger.info(
+                            f"下開倉停損平倉")
                         if self.ref_size < 0 and self.target_size > 0:
                             self.close_Quotes_setting(ref_ask, target_bid)
-                            self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp,'close')
+                           #self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp,'close')
                             print(ref_ask, target_bid)
                             return self.spread_quotes
                         elif self.ref_size > 0 and self.target_size < 0:
                             self.close_Quotes_setting(ref_bid, target_ask)
-                            self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp,'close')
+                            #self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp,'close')
                             print(ref_bid, target_ask)
                             return self.spread_quotes
                         elif self.ref_size > 0 and self.target_size > 0:
@@ -585,5 +587,27 @@ class Predictor:
                             self.close_Quotes_setting(ref_ask, target_ask)
                             print(ref_ask, target_ask)
                             return self.spread_quotes
+                    elif time.strftime("%H:%M:%S") == '13:24:50':
+                        self.logger.info(
+                            f"下開倉強制平倉")
+                        if self.ref_size < 0 and self.target_size > 0:
+                            self.close_Quotes_setting(ref_ask, target_bid)
+                            #self.draw_pictrue(ref_ask,target_bid,open_threshold,stop_loss_threshold,spread_stamp,'close')
+                            print(ref_ask, target_bid)
+                            return self.spread_quotes
+                        elif self.ref_size > 0 and self.target_size < 0:
+                            self.close_Quotes_setting(ref_bid, target_ask)
+                            #self.draw_pictrue(ref_bid,target_ask,open_threshold,stop_loss_threshold,spread_stamp,'close')
+                            print(ref_bid, target_ask)
+                            return self.spread_quotes
+                        elif self.ref_size > 0 and self.target_size > 0:
+                            self.close_Quotes_setting(ref_bid, target_bid)
+                            print(ref_bid, target_bid)
+                            return self.spread_quotes
+                        elif self.ref_size < 0 and self.target_size < 0:
+                            self.close_Quotes_setting(ref_ask, target_ask)
+                            print(ref_ask, target_ask)
+                            return self.spread_quotes
+
         
             
